@@ -1,0 +1,17 @@
+/plan/
+/bin/
+# Build artifacts
+/bin/
+/dist/
+/out/
+# Logs
+*.log
+# Local kubeconfigs and secrets
+kubeconfig
+*.kubeconfig
+.env
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/
+ARCHITECTURE.md
