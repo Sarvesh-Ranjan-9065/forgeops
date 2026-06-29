@@ -1,0 +1,23 @@
+replicaCount: 1
+
+image:
+  repository: [[ .Image ]]
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: [[ .Port ]]
+
+ingress:
+  enabled: true
+  className: nginx
+  host: [[ .Name ]].127-0-0-1.nip.io
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 128Mi
