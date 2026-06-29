@@ -1,7 +1,6 @@
 /plan/
-/bin/
+
 # Build artifacts
-/bin/
 /dist/
 /out/
 # Logs
