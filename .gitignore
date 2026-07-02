@@ -3,6 +3,7 @@
 # Build artifacts
 /dist/
 /out/
+/internal/scaffold/testdata/
 # Logs
 *.log
 # Local kubeconfigs and secrets
@@ -14,3 +15,5 @@ kubeconfig
 .idea/
 .vscode/
 ARCHITECTURE.md
+.GetEnv
+.env
