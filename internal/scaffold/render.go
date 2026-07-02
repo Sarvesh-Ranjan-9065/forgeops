@@ -52,23 +52,60 @@ func (r *Renderer) Render(spec ServiceSpec, dest string) error {
 	})
 }
 
-// renderFile parses and executes a single template file, writing the result to
-// outPath.
+// renderFile renders a single template and writes the result to outPath.
 func (r *Renderer) renderFile(srcPath, outPath string, spec ServiceSpec) error {
-	raw, err := fs.ReadFile(r.fsys, srcPath)
+	b, err := r.renderBytes(srcPath, spec)
 	if err != nil {
-		return fmt.Errorf("read template %s: %w", srcPath, err)
+		return err
 	}
-	tmpl, err := template.New(filepath.Base(srcPath)).Delims("[[", "]]").Parse(string(raw))
-	if err != nil {
-		return fmt.Errorf("parse template %s: %w", srcPath, err)
-	}
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, spec); err != nil {
-		return fmt.Errorf("execute template %s: %w", srcPath, err)
-	}
-	if err := os.WriteFile(outPath, buf.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(outPath, b, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", outPath, err)
 	}
 	return nil
+}
+
+// renderBytes parses and executes a single template file and returns the result.
+func (r *Renderer) renderBytes(srcPath string, spec ServiceSpec) ([]byte, error) {
+	raw, err := fs.ReadFile(r.fsys, srcPath)
+	if err != nil {
+		return nil, fmt.Errorf("read template %s: %w", srcPath, err)
+	}
+	tmpl, err := template.New(filepath.Base(srcPath)).Delims("[[", "]]").Parse(string(raw))
+	if err != nil {
+		return nil, fmt.Errorf("parse template %s: %w", srcPath, err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, spec); err != nil {
+		return nil, fmt.Errorf("execute template %s: %w", srcPath, err)
+	}
+	return buf.Bytes(), nil
+}
+
+// RenderMap renders all templates against spec and returns a map of
+// repository-relative paths to file contents, without writing to disk. It backs
+// the GitHub push path.
+func (r *Renderer) RenderMap(spec ServiceSpec) (map[string][]byte, error) {
+	if err := spec.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid service spec: %w", err)
+	}
+	out := make(map[string][]byte)
+	err := fs.WalkDir(r.fsys, templateRoot, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel := strings.TrimSuffix(strings.TrimPrefix(path, templateRoot+"/"), ".tmpl")
+		b, err := r.renderBytes(path, spec)
+		if err != nil {
+			return err
+		}
+		out[rel] = b
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
