@@ -8,14 +8,24 @@ test:
 # lint runs the configured linters.
 lint:
 	golangci-lint run
-# up creates the local cluster and runs the webhook server (wired in a later phase).
-up:
-	@echo "cluster bring-up is implemented in Phase 3"
-# down tears the local cluster down (wired in a later phase).
-down:
-	@echo "cluster teardown is implemented in Phase 3"
+ # up creates the local cluster and runs the webhook server.
+ up:
+	kind create cluster --config deploy/kind/cluster.yaml
+	kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+	bash deploy/kind/registry.sh
+ 
+ # down tears the local cluster down.
+ down:
+	kind delete cluster
 
 fmt:
 	golangci-lint fmt
 
 check: fmt lint
+
+start:
+	docker start kind-control-plane kind-registry
+
+stop:
+	docker stop kind-control-plane kind-registry
+
