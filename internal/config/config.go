@@ -40,3 +40,13 @@ func (c Config) RedactedToken() string {
 	}
 	return "****" + c.GitHubToken[len(c.GitHubToken)-4:]
 }
+
+// WebhookSecret returns the GitHub webhook HMAC secret from the environment.
+// Source: FORGE_WEBHOOK_SECRET.
+func WebhookSecret() (string, error) {
+	secret := os.Getenv("FORGE_WEBHOOK_SECRET")
+	if secret == "" {
+		return "", errors.New("FORGE_WEBHOOK_SECRET is required")
+	}
+	return secret, nil
+}
