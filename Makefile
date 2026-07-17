@@ -22,10 +22,3 @@ fmt:
 	golangci-lint fmt
 
 check: fmt lint
-
-start:
-	docker start kind-control-plane kind-registry
-
-stop:
-	docker stop kind-control-plane kind-registry
-
