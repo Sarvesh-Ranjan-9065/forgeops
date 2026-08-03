@@ -1,0 +1,34 @@
+{
+	"name": "ForgeOps Workspace",
+	"build": {
+		"dockerfile": "Dockerfile"
+	},
+	"remoteUser": "sarvesh",
+	"containerUser": "sarvesh",
+	"mounts": [
+		"source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
+		"source=forgeops-go-mod,target=/go/pkg/mod,type=volume",
+		"source=forgeops-go-build,target=/home/sarvesh/.cache/go-build,type=volume",
+		"source=forgeops-command-history,target=/home/sarvesh/.commandhistory,type=volume"
+	],
+	"forwardPorts": [80, 443, 5000, 8080, 9090],
+	"postCreateCommand": "bash .devcontainer/post-create.sh",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"golang.go",
+				"ms-azuretools.vscode-docker",
+				"ms-kubernetes-tools.vscode-kubernetes-tools",
+				"redhat.vscode-yaml"
+			],
+			"settings": {
+				"go.useLanguageServer": true,
+				"go.lintOnSave": "package",
+				"go.lintTool": "golangci-lint",
+				"go.toolsEnvVars": {
+					"GOPATH": "/go"
+				}
+			}
+		}
+	}
+}
