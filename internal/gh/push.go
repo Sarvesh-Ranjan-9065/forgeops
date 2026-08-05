@@ -30,7 +30,6 @@ func PushTree(ctx context.Context, client *github.Client, owner, repo, message s
 	}
 
 	// Empty base tree string is correct for the first commit in a new repo.
-	fmt.Printf("DEBUG: tree has %d entries, first entry: %+v\n", len(entries), entries[0])
 	tree, _, err := client.Git.CreateTree(ctx, owner, repo, "", entries)
 	if err != nil {
 		return fmt.Errorf("create tree: %w", err)
