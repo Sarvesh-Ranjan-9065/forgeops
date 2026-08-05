@@ -1,24 +1,49 @@
-.PHONY: build test lint up down
-# build compiles all packages.ForgeOps - Phase 0 Implementation (Foundations & Bootstrap)3
+.PHONY: build test lint check fmt up down run bootstrap help
+
+# build compiles all packages.
 build:
 	go build ./...
+
 # test runs the unit test suite.
 test:
-	go test ./...
+	bash scripts/test.sh
+
 # lint runs the configured linters.
 lint:
-	golangci-lint run
- # up creates the local cluster and runs the webhook server.
- up:
-	kind create cluster --config deploy/kind/cluster.yaml
-	kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
-	bash deploy/kind/registry.sh
- 
- # down tears the local cluster down.
- down:
-	kind delete cluster
+	bash scripts/lint.sh
 
+# fmt formats Go source files.
 fmt:
-	golangci-lint fmt
+	go fmt ./...
 
+# check runs formatters and linters.
 check: fmt lint
+
+# up creates the local cluster and boots infrastructure.
+up:
+	bash scripts/up.sh
+
+# down tears down the local cluster and infrastructure.
+down:
+	bash scripts/down.sh
+
+# run starts the webhook server locally.
+run:
+	bash scripts/run.sh
+
+# bootstrap verifies the installed development toolchain.
+bootstrap:
+	bash scripts/bootstrap.sh
+
+# help prints available make targets.
+help:
+	@echo "Available targets:"
+	@echo "  make build      - Compile all Go packages"
+	@echo "  make test       - Run unit and golden file tests"
+	@echo "  make lint       - Run golangci-lint code checks"
+	@echo "  make fmt        - Format code using golangci-lint fmt"
+	@echo "  make check      - Run formatting and linting"
+	@echo "  make up         - Spin up Kind cluster, ingress, and local registry"
+	@echo "  make down       - Tear down Kind cluster and local registry"
+	@echo "  make run        - Run forge-webhook server locally"
+	@echo "  make bootstrap  - Check installed toolchain versions"
