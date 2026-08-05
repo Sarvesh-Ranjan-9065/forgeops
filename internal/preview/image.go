@@ -20,7 +20,7 @@ func Checkout(ctx context.Context, logger *slog.Logger, cloneURL, ref string) (s
 	if err != nil {
 		return "", err
 	}
-	if err := run(ctx, logger, "git", "clone", "--depth", "1", "--branch", ref, cloneURL, dir); err != nil {
+	if err := run(ctx, logger, "git", "clone", "--depth", "1", "--branch", ref, "--", cloneURL, dir); err != nil {
 		_ = os.RemoveAll(dir)
 		return "", fmt.Errorf("clone %s@%s: %w", cloneURL, ref, err)
 	}
