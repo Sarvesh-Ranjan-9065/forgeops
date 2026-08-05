@@ -23,16 +23,20 @@ func Deploy(ctx context.Context, logger *slog.Logger, namespace, svc, chartPath,
 
 // imageRepo returns the repository portion of a registry/name:tag reference.
 func imageRepo(image string) string {
-	if i := strings.LastIndex(image, ":"); i >= 0 {
-		return image[:i]
+	lastColon := strings.LastIndex(image, ":")
+	lastSlash := strings.LastIndex(image, "/")
+	if lastColon > lastSlash {
+		return image[:lastColon]
 	}
 	return image
 }
 
 // imageTag returns the tag portion of a registry/name:tag reference.
 func imageTag(image string) string {
-	if i := strings.LastIndex(image, ":"); i >= 0 {
-		return image[i+1:]
+	lastColon := strings.LastIndex(image, ":")
+	lastSlash := strings.LastIndex(image, "/")
+	if lastColon > lastSlash {
+		return image[lastColon+1:]
 	}
 	return "latest"
 }
