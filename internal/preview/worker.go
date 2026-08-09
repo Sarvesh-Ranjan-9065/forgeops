@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/google/go-github/v62/github"
@@ -71,18 +72,32 @@ type Worker struct {
 	prov   *Provisioner
 	queue  chan Event
 	logger *slog.Logger
+	mu       sync.Mutex
+	inflight map[int]bool
 }
 
 // NewWorker returns a Worker with a buffered queue of the given size.
 func NewWorker(prov *Provisioner, buffer int) *Worker {
-	return &Worker{prov: prov, queue: make(chan Event, buffer), logger: prov.Logger}
+	return &Worker{
+		prov:     prov,
+		queue:    make(chan Event, buffer),
+		logger:   prov.Logger,
+		inflight: make(map[int]bool),
+	}
 }
 
 // Enqueue adds an event to the work queue. It returns false if the queue is full
 // so the caller can shed load instead of blocking the HTTP handler.
 func (w *Worker) Enqueue(e Event) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.inflight[e.PRNumber] {
+		w.logger.Debug("dropping duplicate; pr already queued", "pr", e.PRNumber)
+		return true // existing queued work already covers this PR
+	}
 	select {
 	case w.queue <- e:
+		w.inflight[e.PRNumber] = true
 		return true
 	default:
 		return false
@@ -94,6 +109,7 @@ func (w *Worker) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			w.drain()
 			return
 		case e := <-w.queue:
 			w.process(ctx, e)
@@ -101,18 +117,87 @@ func (w *Worker) Run(ctx context.Context) {
 	}
 }
 
+// drain finishes any queued events using a bounded background context so a
+// shutdown does not abandon already-accepted work.
+func (w *Worker) drain() {
+	drainCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	for {
+		select {
+		case e := <-w.queue:
+			w.process(drainCtx, e)
+		default:
+			return
+		}
+	}
+}
+
 // process handles a single event. Only PR-opening actions provision in Phase 4;
 // closing/teardown is handled in Phase 5.
-func (w *Worker) process(ctx context.Context, e Event) {
+ func (w *Worker) process(ctx context.Context, e Event) {
+	defer w.done(e.PRNumber)
 	switch e.Action {
+	case "closed":
+		jobCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		if err := withRetry(jobCtx, w.logger, func(c context.Context) error {
+			return Teardown(c, w.logger, w.prov.Clientset, e.PRNumber, e.Service)
+		}); err != nil {
+			metrics.WebhookEventsTotal.WithLabelValues("error").Inc()
+			w.logger.Error("teardown failed", "pr", e.PRNumber, "error", err)
+		}
 	case "opened", "reopened", "synchronize":
 		jobCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
-		if err := w.prov.Provision(jobCtx, e); err != nil {
+		err := withRetry(jobCtx, w.logger, func(c context.Context) error {
+			return w.prov.Provision(c, e)
+		})
+		if err != nil {
 			metrics.WebhookEventsTotal.WithLabelValues("error").Inc()
 			w.logger.Error("provision failed", "pr", e.PRNumber, "error", err)
+			if e.Action != "synchronize" {
+				// Clean up partial resources so a failed first provision does not
+				// linger until GC. A working env from a prior sync is left intact.
+				if tErr := Teardown(jobCtx, w.logger, w.prov.Clientset, e.PRNumber, e.Service); tErr != nil {
+					w.logger.Error("partial cleanup failed", "pr", e.PRNumber, "error", tErr)
+				}
+			}
 		}
 	default:
 		w.logger.Debug("ignoring action", "action", e.Action)
 	}
+ }
+
+// done clears the in-flight guard for a PR once its event finishes.
+func (w *Worker) done(pr int) {
+	w.mu.Lock()
+	delete(w.inflight, pr)
+	w.mu.Unlock()
 }
+
+// withRetry runs fn up to three times with capped exponential backoff, stopping
+// early if ctx is canceled.
+func withRetry(ctx context.Context, logger *slog.Logger, fn func(context.Context) error) error {
+	const maxAttempts = 3
+	const maxBackoff = 30 * time.Second
+	backoff := 2 * time.Second
+	var err error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if err = fn(ctx); err == nil {
+			return nil
+		}
+		if attempt == maxAttempts {
+			break
+		}
+		logger.Warn("operation failed; retrying", "attempt", attempt, "backoff", backoff.String(), "error", err)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+		if backoff *= 2; backoff > maxBackoff {
+			backoff = maxBackoff
+		}
+	}
+	return err
+ }

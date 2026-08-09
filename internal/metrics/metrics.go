@@ -17,3 +17,11 @@ var WebhookEventsTotal = promauto.NewCounterVec(
 	},
 	[]string{"result"},
 )
+
+// GCDeletionsTotal counts preview namespaces deleted by the TTL collector.
+var GCDeletionsTotal = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Name: "forgeops_gc_deletions_total",
+		Help: "Total number of expired preview namespaces deleted by GC.",
+	},
+)
