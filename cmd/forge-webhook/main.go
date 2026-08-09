@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/sarvesh-ranjan-9065/forgeops/internal/config"
+	"github.com/sarvesh-ranjan-9065/forgeops/internal/gc"
 	"github.com/sarvesh-ranjan-9065/forgeops/internal/gh"
 	"github.com/sarvesh-ranjan-9065/forgeops/internal/log"
 	"github.com/sarvesh-ranjan-9065/forgeops/internal/preview"
@@ -47,6 +49,27 @@ func main() {
 	}
 	worker := preview.NewWorker(prov, 64)
 	go worker.Run(ctx)
+
+ 	collector := &gc.Collector{
+ 		Clientset: clientset,
+ 		Logger:    logger,
+ 		TTL:       24 * time.Hour,
+ 		Interval:  10 * time.Minute,
+ 	}
+ 	go collector.Run(ctx)
+ 
+ 	if repo := config.Repo(); repo != "" {
+ 		reconciler := &preview.Reconciler{
+ 			Clientset: clientset,
+ 			GitHub:    prov.GitHub,
+ 			Worker:    worker,
+ 			Logger:    logger,
+ 			Owner:     cfg.GitHubOwner,
+ 			Repo:      repo,
+ 			Interval:  5 * time.Minute,
+ 		}
+ 		go reconciler.Run(ctx)
+ 	}
 
 	router := server.NewRouter(server.RouterDeps{
 		WebhookSecret:  []byte(secret),
