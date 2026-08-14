@@ -1,0 +1,36 @@
+name: ci
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+      - name: Test
+        run: go test ./...
+      - name: Build
+        run: go build ./...
+      - name: No emojis
+        run: bash scripts/check-no-emoji.sh
+
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
