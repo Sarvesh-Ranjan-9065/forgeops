@@ -47,10 +47,12 @@ func (c *Collector) sweep(ctx context.Context) {
 		LabelSelector: preview.LabelPR,
 	})
 	if err != nil {
+		metrics.ReconcileErrorsTotal.WithLabelValues("gc").Inc()
 		c.Logger.Error("gc list namespaces", "error", err)
 		return
 	}
 	cutoff := time.Now().Add(-c.TTL)
+	deleted := 0
 	for i := range list.Items {
 		ns := &list.Items[i]
 		created, ok := createdAt(ns)
@@ -58,12 +60,15 @@ func (c *Collector) sweep(ctx context.Context) {
 			continue
 		}
 		if err := c.delete(ctx, ns.Name); err != nil {
+			metrics.ReconcileErrorsTotal.WithLabelValues("gc").Inc()
 			c.Logger.Error("gc delete namespace", "ns", ns.Name, "error", err)
 			continue
 		}
+		deleted++
 		metrics.GCDeletionsTotal.Inc()
 		c.Logger.Info("gc deleted expired preview", "ns", ns.Name, "age", time.Since(created).String())
 	}
+	metrics.EnvsActive.Set(float64(len(list.Items) - deleted))
 }
 
 // delete removes a namespace, tolerating an already-deleted namespace.

@@ -35,6 +35,13 @@ run:
 bootstrap:
 	bash scripts/bootstrap.sh
 
+
+
+# check-emoji fails if any Go source contains non-ASCII characters.
+check-emoji:
+	bash scripts/check-no-emoji.sh
+
+
 # help prints available make targets.
 help:
 	@echo "Available targets:"
@@ -47,3 +54,4 @@ help:
 	@echo "  make down       - Tear down Kind cluster and local registry"
 	@echo "  make run        - Run forge-webhook server locally"
 	@echo "  make bootstrap  - Check installed toolchain versions"
+	@echo "  make check-emoji - Check for non-ASCII characters in Go source files"
