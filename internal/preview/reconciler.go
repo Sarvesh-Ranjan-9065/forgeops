@@ -9,6 +9,8 @@ import (
 	"github.com/google/go-github/v62/github"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/sarvesh-ranjan-9065/forgeops/internal/metrics"
 )
 
 // Reconciler converges preview namespaces with the set of open pull requests. It
@@ -43,11 +45,13 @@ func (r *Reconciler) Run(ctx context.Context) {
 func (r *Reconciler) reconcile(ctx context.Context) {
 	openPRs, err := r.listOpenPRs(ctx)
 	if err != nil {
+		metrics.ReconcileErrorsTotal.WithLabelValues("reconcile").Inc()
 		r.Logger.Error("reconcile list PRs", "error", err)
 		return
 	}
 	nsList, err := r.Clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{LabelSelector: LabelPR})
 	if err != nil {
+		metrics.ReconcileErrorsTotal.WithLabelValues("reconcile").Inc()
 		r.Logger.Error("reconcile list namespaces", "error", err)
 		return
 	}

@@ -50,8 +50,9 @@ func WebhookSecret() (string, error) {
 	}
 	return secret, nil
 }
- // Repo returns the repository the reconciler watches, from FORGE_GITHUB_REPO.
- // It is optional; an empty value disables startup reconciliation.
- func Repo() string {
- 	return os.Getenv("FORGE_GITHUB_REPO")
- }
+
+// Repo returns the repository the reconciler watches, from FORGE_GITHUB_REPO.
+// It is optional; an empty value disables startup reconciliation.
+func Repo() string {
+	return os.Getenv("FORGE_GITHUB_REPO")
+}

@@ -69,9 +69,9 @@ func (p *Provisioner) Provision(ctx context.Context, e Event) error {
 // Worker serializes provisioning so the webhook handler can return immediately.
 // Events are processed one at a time in FIFO order.
 type Worker struct {
-	prov   *Provisioner
-	queue  chan Event
-	logger *slog.Logger
+	prov     *Provisioner
+	queue    chan Event
+	logger   *slog.Logger
 	mu       sync.Mutex
 	inflight map[int]bool
 }
@@ -134,7 +134,7 @@ func (w *Worker) drain() {
 
 // process handles a single event. Only PR-opening actions provision in Phase 4;
 // closing/teardown is handled in Phase 5.
- func (w *Worker) process(ctx context.Context, e Event) {
+func (w *Worker) process(ctx context.Context, e Event) {
 	defer w.done(e.PRNumber)
 	switch e.Action {
 	case "closed":
@@ -149,9 +149,11 @@ func (w *Worker) drain() {
 	case "opened", "reopened", "synchronize":
 		jobCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
+		start := time.Now()
 		err := withRetry(jobCtx, w.logger, func(c context.Context) error {
 			return w.prov.Provision(c, e)
 		})
+		metrics.ProvisionDuration.Observe(time.Since(start).Seconds())
 		if err != nil {
 			metrics.WebhookEventsTotal.WithLabelValues("error").Inc()
 			w.logger.Error("provision failed", "pr", e.PRNumber, "error", err)
@@ -166,7 +168,7 @@ func (w *Worker) drain() {
 	default:
 		w.logger.Debug("ignoring action", "action", e.Action)
 	}
- }
+}
 
 // done clears the in-flight guard for a PR once its event finishes.
 func (w *Worker) done(pr int) {
@@ -200,4 +202,4 @@ func withRetry(ctx context.Context, logger *slog.Logger, fn func(context.Context
 		}
 	}
 	return err
- }
+}

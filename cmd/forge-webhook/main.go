@@ -50,26 +50,26 @@ func main() {
 	worker := preview.NewWorker(prov, 64)
 	go worker.Run(ctx)
 
- 	collector := &gc.Collector{
- 		Clientset: clientset,
- 		Logger:    logger,
- 		TTL:       24 * time.Hour,
- 		Interval:  10 * time.Minute,
- 	}
- 	go collector.Run(ctx)
- 
- 	if repo := config.Repo(); repo != "" {
- 		reconciler := &preview.Reconciler{
- 			Clientset: clientset,
- 			GitHub:    prov.GitHub,
- 			Worker:    worker,
- 			Logger:    logger,
- 			Owner:     cfg.GitHubOwner,
- 			Repo:      repo,
- 			Interval:  5 * time.Minute,
- 		}
- 		go reconciler.Run(ctx)
- 	}
+	collector := &gc.Collector{
+		Clientset: clientset,
+		Logger:    logger,
+		TTL:       24 * time.Hour,
+		Interval:  10 * time.Minute,
+	}
+	go collector.Run(ctx)
+
+	if repo := config.Repo(); repo != "" {
+		reconciler := &preview.Reconciler{
+			Clientset: clientset,
+			GitHub:    prov.GitHub,
+			Worker:    worker,
+			Logger:    logger,
+			Owner:     cfg.GitHubOwner,
+			Repo:      repo,
+			Interval:  5 * time.Minute,
+		}
+		go reconciler.Run(ctx)
+	}
 
 	router := server.NewRouter(server.RouterDeps{
 		WebhookSecret:  []byte(secret),
