@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ForgeOps Console</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #0e1116; color: #e6edf3; }
+  header { padding: 24px 32px; border-bottom: 1px solid #21262d; }
+  h1 { margin: 0 0 4px; font-size: 20px; }
+  .sub { color: #8b949e; font-size: 13px; }
+  .stats { display: flex; gap: 40px; padding: 20px 32px; }
+  .stat .n { font-size: 28px; font-weight: 600; }
+  .stat .l { color: #8b949e; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  .pipe { display: flex; gap: 8px; padding: 0 32px 20px; flex-wrap: wrap; }
+  .pipe span { background: #161b22; border: 1px solid #30363d; border-radius: 999px; padding: 4px 12px; font-size: 12px; color: #8b949e; }
+  .grid { padding: 8px 32px 40px; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; }
+  .rowline { display: flex; justify-content: space-between; align-items: center; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+  .Live { background: #1f6f3f; color: #d7ffe6; }
+  .Deploying { background: #8a6d1a; color: #fff3cf; }
+  .Provisioning { background: #30363d; color: #c9d1d9; }
+  a.url { color: #58a6ff; text-decoration: none; word-break: break-all; }
+  .meta { color: #8b949e; font-size: 12px; margin-top: 8px; }
+  .empty { color: #8b949e; padding: 40px 32px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>ForgeOps Console</h1>
+    <div class="sub">Live preview environments. Read-only.</div>
+  </header>
+  <section class="stats">
+    <div class="stat"><div class="n" id="active">0</div><div class="l">Active previews</div></div>
+    <div class="stat"><div class="n">$0</div><div class="l">Cloud cost</div></div>
+    <div class="stat"><div class="n" id="updated">-</div><div class="l">Last updated</div></div>
+  </section>
+  <div class="pipe">
+    <span>PR opened</span><span>Build</span><span>Push</span><span>Deploy</span><span>Live URL</span><span>PR closed</span><span>Cleaned up</span>
+  </div>
+  <div id="grid" class="grid"></div>
+  <div id="empty" class="empty" hidden>No active preview environments right now.</div>
+<script>
+  const fmtAge = function (s) {
+    if (s <= 0) return "-";
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (h > 0) return h + "h " + m + "m";
+    return m + "m";
+  };
+
+  const render = function (data) {
+    document.getElementById("active").textContent = data.summary.active;
+    document.getElementById("updated").textContent = new Date(data.summary.generatedAt).toLocaleTimeString();
+    const grid = document.getElementById("grid");
+    const empty = document.getElementById("empty");
+    grid.innerHTML = "";
+    if (!data.environments || data.environments.length === 0) {
+      empty.hidden = false;
+      return;
+    }
+    empty.hidden = true;
+    for (const e of data.environments) {
+      const status = e.status || "Provisioning";
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML =
+        '<div class="rowline"><strong>PR #' + e.pr + " - " + e.service + "</strong>" +
+        '<span class="pill ' + status + '">' + status + "</span></div>" +
+        '<div class="meta"><a class="url" href="' + e.url + '" target="_blank" rel="noopener">' + e.url + "</a></div>" +
+        '<div class="meta">Age ' + fmtAge(e.ageSeconds) + " - expires in " + fmtAge(e.expiresInSeconds) + "</div>";
+      grid.appendChild(card);
+    }
+  };
+
+  const load = function () {
+    fetch("/dashboard/api/environments")
+      .then(function (r) { return r.json(); })
+      .then(render)
+      .catch(function (err) { console.error("load failed", err); });
+  };
+
+  load();
+  setInterval(load, 5000);
+</script>
+</body>
+</html>

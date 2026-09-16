@@ -18,6 +18,9 @@ type RouterDeps struct {
 	// WebhookHandler processes verified webhook requests. If nil, a default
 	// acknowledging handler is used (real processing is wired in Phase 4).
 	WebhookHandler http.HandlerFunc
+	// DashboardHandler serves the read-only dashboard UI and JSON API under
+	// /dashboard. If nil, the dashboard is not mounted.
+	DashboardHandler http.Handler
 }
 
 // NewRouter builds the Chi router exposing health, readiness, webhook, and
@@ -36,6 +39,13 @@ func NewRouter(deps RouterDeps) http.Handler {
 		_, _ = w.Write([]byte("ready"))
 	})
 	r.Handle("/metrics", promhttp.Handler())
+
+	if deps.DashboardHandler != nil {
+		r.Get("/dashboard", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/dashboard/", http.StatusMovedPermanently)
+		})
+		r.Mount("/dashboard", deps.DashboardHandler)
+	}
 
 	r.Group(func(pr chi.Router) {
 		pr.Use(fwmw.VerifySignature(deps.WebhookSecret))

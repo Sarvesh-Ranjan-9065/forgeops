@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sarvesh-ranjan-9065/forgeops/internal/config"
+	"github.com/sarvesh-ranjan-9065/forgeops/internal/dashboard"
 	"github.com/sarvesh-ranjan-9065/forgeops/internal/gc"
 	"github.com/sarvesh-ranjan-9065/forgeops/internal/gh"
 	"github.com/sarvesh-ranjan-9065/forgeops/internal/log"
@@ -74,6 +75,11 @@ func main() {
 	router := server.NewRouter(server.RouterDeps{
 		WebhookSecret:  []byte(secret),
 		WebhookHandler: preview.NewWebhookHandler(worker, logger),
+		DashboardHandler: (&dashboard.Handler{
+			Clientset: clientset,
+			Logger:    logger,
+			TTL:       24 * time.Hour,
+		}).Routes(),
 	})
 
 	srv := server.New(":8080", router, logger)
