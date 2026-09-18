@@ -34,10 +34,10 @@ func (r *Renderer) Render(spec ServiceSpec, dest string) error {
 		return fmt.Errorf("invalid service spec: %w", err)
 	}
 	root := filepath.Join(dest, spec.Name)
-	return fs.WalkDir(r.fsys, templateRoot, func(path string, d fs.DirEntry,
+	err := fs.WalkDir(r.fsys, templateRoot, func(path string, d fs.DirEntry,
 		walkErr error) error {
 		if walkErr != nil {
-			return walkErr
+			return fmt.Errorf("walk error at %s: %w", path, walkErr)
 		}
 		if d.IsDir() {
 			return nil
@@ -50,13 +50,17 @@ func (r *Renderer) Render(spec ServiceSpec, dest string) error {
 		}
 		return r.renderFile(path, outPath, spec)
 	})
+	if err != nil {
+		return fmt.Errorf("walk templates: %w", err)
+	}
+	return nil
 }
 
 // renderFile renders a single template and writes the result to outPath.
 func (r *Renderer) renderFile(srcPath, outPath string, spec ServiceSpec) error {
 	b, err := r.renderBytes(srcPath, spec)
 	if err != nil {
-		return err
+		return fmt.Errorf("render file bytes for %s: %w", srcPath, err)
 	}
 	if err := os.WriteFile(outPath, b, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", outPath, err)
@@ -91,7 +95,7 @@ func (r *Renderer) RenderMap(spec ServiceSpec) (map[string][]byte, error) {
 	out := make(map[string][]byte)
 	err := fs.WalkDir(r.fsys, templateRoot, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			return walkErr
+			return fmt.Errorf("walk error at %s: %w", path, walkErr)
 		}
 		if d.IsDir() {
 			return nil
@@ -99,13 +103,13 @@ func (r *Renderer) RenderMap(spec ServiceSpec) (map[string][]byte, error) {
 		rel := strings.TrimSuffix(strings.TrimPrefix(path, templateRoot+"/"), ".tmpl")
 		b, err := r.renderBytes(path, spec)
 		if err != nil {
-			return err
+			return fmt.Errorf("render bytes for %s: %w", path, err)
 		}
 		out[rel] = b
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("walk templates: %w", err)
 	}
 	return out, nil
 }

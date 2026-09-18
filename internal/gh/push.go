@@ -3,6 +3,7 @@ package gh
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/google/go-github/v62/github"
 )
@@ -12,8 +13,15 @@ import (
 // push to an empty repository is handled by creating the commit with no base
 // tree and creating the ref; subsequent pushes update the ref instead.
 func PushTree(ctx context.Context, client *github.Client, owner, repo, message string, files map[string][]byte) error {
+	keys := make([]string, 0, len(files))
+	for k := range files {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	entries := make([]*github.TreeEntry, 0, len(files))
-	for path, content := range files {
+	for _, path := range keys {
+		content := files[path]
 		blob, _, err := client.Git.CreateBlob(ctx, owner, repo, &github.Blob{
 			Content:  github.String(string(content)),
 			Encoding: github.String("utf-8"),

@@ -2,6 +2,7 @@ package preview
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"time"
@@ -59,6 +60,9 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 	live := map[int]bool{}
 	for i := range nsList.Items {
 		ns := &nsList.Items[i]
+		if ns.DeletionTimestamp != nil {
+			continue
+		}
 		prNum, err := strconv.Atoi(ns.Labels[LabelPR])
 		if err != nil {
 			continue
@@ -92,9 +96,13 @@ func (r *Reconciler) listOpenPRs(ctx context.Context) (map[int]Event, error) {
 	for {
 		prs, resp, err := r.GitHub.PullRequests.List(ctx, r.Owner, r.Repo, opt)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("list open PRs for %s/%s: %w", r.Owner, r.Repo, err)
 		}
 		for _, pr := range prs {
+			cloneURL := pr.GetBase().GetRepo().GetCloneURL()
+			if headRepo := pr.GetHead().GetRepo(); headRepo != nil && headRepo.GetCloneURL() != "" {
+				cloneURL = headRepo.GetCloneURL()
+			}
 			out[pr.GetNumber()] = Event{
 				Action:   "reopened",
 				PRNumber: pr.GetNumber(),
@@ -102,7 +110,7 @@ func (r *Reconciler) listOpenPRs(ctx context.Context) (map[int]Event, error) {
 				Owner:    r.Owner,
 				Repo:     r.Repo,
 				HeadRef:  pr.GetHead().GetRef(),
-				CloneURL: pr.GetBase().GetRepo().GetCloneURL(),
+				CloneURL: cloneURL,
 			}
 		}
 		if resp.NextPage == 0 {
