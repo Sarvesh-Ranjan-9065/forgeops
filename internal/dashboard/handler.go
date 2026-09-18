@@ -59,12 +59,16 @@ func (h *Handler) collect(ctx context.Context) (APIResponse, error) {
 		}
 		svc := ns.Labels[preview.LabelService]
 		host := fmt.Sprintf("pr-%d-%s.127-0-0-1.nip.io", pr, svc)
+		status := h.status(ctx, ns.Name, svc)
+		if ns.DeletionTimestamp != nil {
+			status = "Terminating"
+		}
 		view := EnvView{
 			PR:        pr,
 			Service:   svc,
 			Namespace: ns.Name,
 			URL:       "http://" + host,
-			Status:    h.status(ctx, ns.Name, svc),
+			Status:    status,
 		}
 		if created := createdAt(ns); !created.IsZero() {
 			view.CreatedAt = created
@@ -76,8 +80,14 @@ func (h *Handler) collect(ctx context.Context) (APIResponse, error) {
 		envs = append(envs, view)
 	}
 	sort.Slice(envs, func(i, j int) bool { return envs[i].PR < envs[j].PR })
+	activeCount := 0
+	for _, e := range envs {
+		if e.Status != "Terminating" {
+			activeCount++
+		}
+	}
 	return APIResponse{
-		Summary:      Summary{Active: len(envs), GeneratedAt: now},
+		Summary:      Summary{Active: activeCount, GeneratedAt: now},
 		Environments: envs,
 	}, nil
 }

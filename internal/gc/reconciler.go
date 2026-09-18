@@ -53,8 +53,13 @@ func (c *Collector) sweep(ctx context.Context) {
 	}
 	cutoff := time.Now().Add(-c.TTL)
 	deleted := 0
+	active := 0
 	for i := range list.Items {
 		ns := &list.Items[i]
+		if ns.DeletionTimestamp != nil {
+			continue
+		}
+		active++
 		created, ok := createdAt(ns)
 		if !ok || created.After(cutoff) {
 			continue
@@ -68,7 +73,7 @@ func (c *Collector) sweep(ctx context.Context) {
 		metrics.GCDeletionsTotal.Inc()
 		c.Logger.Info("gc deleted expired preview", "ns", ns.Name, "age", time.Since(created).String())
 	}
-	metrics.EnvsActive.Set(float64(len(list.Items) - deleted))
+	metrics.EnvsActive.Set(float64(active - deleted))
 }
 
 // delete removes a namespace, tolerating an already-deleted namespace.
