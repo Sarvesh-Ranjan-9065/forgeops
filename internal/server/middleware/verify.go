@@ -13,6 +13,10 @@ import (
 
 const signatureHeader = "X-Hub-Signature-256"
 
+// maxWebhookPayloadBytes is the maximum allowed size for GitHub webhook request
+// bodies (25 MB, matching GitHub's maximum webhook payload limit).
+const maxWebhookPayloadBytes = 25 << 20
+
 // VerifySignature returns middleware that verifies the GitHub HMAC-SHA256
 // signature of each request body using secret. Requests with a missing or
 // invalid signature are rejected with 401. The body is restored so downstream
@@ -20,9 +24,10 @@ const signatureHeader = "X-Hub-Signature-256"
 func VerifySignature(secret []byte) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, maxWebhookPayloadBytes)
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
-				http.Error(w, "cannot read body", http.StatusBadRequest)
+				http.Error(w, "cannot read body or payload exceeds size limit", http.StatusBadRequest)
 				return
 			}
 			_ = r.Body.Close()

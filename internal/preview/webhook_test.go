@@ -31,6 +31,9 @@ func TestWebhookHandler(t *testing.T) {
 			"number": 1,
 			"pull_request": {
 				"number": 1,
+				"user": {
+					"login": "test-author"
+				},
 				"head": {
 					"ref": "test-pr"
 				}
@@ -103,5 +106,44 @@ func TestWebhookHandler(t *testing.T) {
 		wrapped.ServeHTTP(rr, req)
 
 		require.Equal(t, http.StatusNoContent, rr.Code)
+	})
+
+	t.Run("empty author rejected with 200", func(t *testing.T) {
+		prov := &Provisioner{Logger: logger}
+		worker := NewWorker(prov, 10)
+		handler := NewWebhookHandler(worker, logger)
+		wrapped := middleware.VerifySignature(secret)(handler)
+
+		payload := `{
+			"action": "opened",
+			"number": 1,
+			"pull_request": {
+				"number": 1,
+				"head": {
+					"ref": "test-pr"
+				}
+			},
+			"repository": {
+				"name": "demo",
+				"owner": {
+					"login": "Sarvesh-Ranjan-9065"
+				},
+				"clone_url": "https://github.com/Sarvesh-Ranjan-9065/demo.git"
+			}
+		}`
+
+		req := httptest.NewRequest(http.MethodPost, "/webhook", bytes.NewReader([]byte(payload)))
+		req.Header.Set("X-GitHub-Event", "pull_request")
+
+		mac := hmac.New(sha256.New, secret)
+		mac.Write([]byte(payload))
+		signature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+		req.Header.Set("X-Hub-Signature-256", signature)
+
+		rr := httptest.NewRecorder()
+		wrapped.ServeHTTP(rr, req)
+
+		require.Equal(t, http.StatusOK, rr.Code)
+		require.Equal(t, 0, len(worker.queue))
 	})
 }
