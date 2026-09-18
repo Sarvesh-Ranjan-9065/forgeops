@@ -1,4 +1,4 @@
-.PHONY: build test lint check fmt up down run bootstrap help
+.PHONY: build test lint check fmt up down run bootstrap help check-emoji
 
 # build compiles all packages.
 build:
@@ -17,7 +17,7 @@ fmt:
 	go fmt ./...
 
 # check runs formatters and linters.
-check: fmt lint
+check: fmt lint check-emoji
 
 # up creates the local cluster and boots infrastructure.
 up:

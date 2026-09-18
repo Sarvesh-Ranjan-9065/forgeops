@@ -39,7 +39,7 @@ jobs:
         run: docker build -t [[ .Name ]]:ci .
 
       - name: Trivy scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: [[ .Name ]]:ci
           format: table
