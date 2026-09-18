@@ -32,6 +32,7 @@ type Provisioner struct {
 	GitHub    *github.Client
 	Logger    *slog.Logger
 	Registry  string // e.g. "localhost:5000"
+	Token     string // GitHub OAuth token for authenticated operations
 }
 
 // Provision builds, deploys, and exposes a preview environment for the PR, then
@@ -39,28 +40,28 @@ type Provisioner struct {
 func (p *Provisioner) Provision(ctx context.Context, e Event) error {
 	ns, err := EnsureNamespace(ctx, p.Clientset, e.PRNumber, e.Service)
 	if err != nil {
-		return err
+		return fmt.Errorf("ensure namespace for pr %d (%s): %w", e.PRNumber, e.Service, err)
 	}
-	dir, err := Checkout(ctx, p.Logger, e.CloneURL, e.HeadRef)
+	dir, err := Checkout(ctx, p.Logger, p.Token, e.CloneURL, e.HeadRef)
 	if err != nil {
-		return err
+		return fmt.Errorf("checkout pr %d: %w", e.PRNumber, err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
 	image, err := BuildAndPush(ctx, p.Logger, p.Registry, e.Service, e.PRNumber, dir)
 	if err != nil {
-		return err
+		return fmt.Errorf("build and push image for pr %d (%s): %w", e.PRNumber, e.Service, err)
 	}
 	host := fmt.Sprintf("pr-%d-%s.127-0-0-1.nip.io", e.PRNumber, e.Service)
 	if err := Deploy(ctx, p.Logger, ns, e.Service, filepath.Join(dir, "helm"), image, host); err != nil {
-		return err
+		return fmt.Errorf("deploy helm release in %s: %w", ns, err)
 	}
 	if err := WaitReady(ctx, p.Clientset, ns, e.Service); err != nil {
-		return err
+		return fmt.Errorf("wait ready for service %s in %s: %w", e.Service, ns, err)
 	}
 	url := "http://" + host
 	if err := UpsertComment(ctx, p.GitHub, e.Owner, e.Repo, e.PRNumber, url); err != nil {
-		return err
+		return fmt.Errorf("upsert sticky comment on pr %d: %w", e.PRNumber, err)
 	}
 	p.Logger.Info("preview ready", "pr", e.PRNumber, "svc", e.Service, "url", url)
 	return nil
@@ -69,31 +70,35 @@ func (p *Provisioner) Provision(ctx context.Context, e Event) error {
 // Worker serializes provisioning so the webhook handler can return immediately.
 // Events are processed one at a time in FIFO order.
 type Worker struct {
-	prov     *Provisioner
-	queue    chan Event
-	logger   *slog.Logger
-	mu       sync.Mutex
-	inflight map[int]bool
+	prov        *Provisioner
+	queue       chan Event
+	logger      *slog.Logger
+	mu          sync.Mutex
+	inflight    map[int]bool
+	needsResync map[int]Event
 }
 
 // NewWorker returns a Worker with a buffered queue of the given size.
 func NewWorker(prov *Provisioner, buffer int) *Worker {
 	return &Worker{
-		prov:     prov,
-		queue:    make(chan Event, buffer),
-		logger:   prov.Logger,
-		inflight: make(map[int]bool),
+		prov:        prov,
+		queue:       make(chan Event, buffer),
+		logger:      prov.Logger,
+		inflight:    make(map[int]bool),
+		needsResync: make(map[int]Event),
 	}
 }
 
-// Enqueue adds an event to the work queue. It returns false if the queue is full
-// so the caller can shed load instead of blocking the HTTP handler.
+// Enqueue adds an event to the work queue. If an event for the same PR is
+// currently in-flight, the event is coalesced into needsResync rather than
+// dropped, ensuring the latest commit always converges once the active run completes.
 func (w *Worker) Enqueue(e Event) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.inflight[e.PRNumber] {
-		w.logger.Debug("dropping duplicate; pr already queued", "pr", e.PRNumber)
-		return true // existing queued work already covers this PR
+		w.logger.Info("coalescing event for in-flight pr", "pr", e.PRNumber, "action", e.Action)
+		w.needsResync[e.PRNumber] = e
+		return true
 	}
 	select {
 	case w.queue <- e:
@@ -132,22 +137,27 @@ func (w *Worker) drain() {
 	}
 }
 
-// process handles a single event. Only PR-opening actions provision in Phase 4;
-// closing/teardown is handled in Phase 5.
-func (w *Worker) process(ctx context.Context, e Event) {
+// process handles a single event using a bounded background context so
+// that in-flight operations (like docker build) are not abruptly aborted
+// if SIGINT/SIGTERM cancels the parent process context during shutdown.
+func (w *Worker) process(_ context.Context, e Event) {
 	defer w.done(e.PRNumber)
 	switch e.Action {
 	case "closed":
-		jobCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		jobCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 		if err := withRetry(jobCtx, w.logger, func(c context.Context) error {
 			return Teardown(c, w.logger, w.prov.Clientset, e.PRNumber, e.Service)
 		}); err != nil {
 			metrics.WebhookEventsTotal.WithLabelValues("error").Inc()
 			w.logger.Error("teardown failed", "pr", e.PRNumber, "error", err)
+		} else {
+			if cErr := DecommissionComment(jobCtx, w.prov.GitHub, e.Owner, e.Repo, e.PRNumber); cErr != nil {
+				w.logger.Warn("failed to decommission preview comment", "pr", e.PRNumber, "error", cErr)
+			}
 		}
 	case "opened", "reopened", "synchronize":
-		jobCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		jobCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		start := time.Now()
 		err := withRetry(jobCtx, w.logger, func(c context.Context) error {
@@ -159,8 +169,11 @@ func (w *Worker) process(ctx context.Context, e Event) {
 			w.logger.Error("provision failed", "pr", e.PRNumber, "error", err)
 			if e.Action != "synchronize" {
 				// Clean up partial resources so a failed first provision does not
-				// linger until GC. A working env from a prior sync is left intact.
-				if tErr := Teardown(jobCtx, w.logger, w.prov.Clientset, e.PRNumber, e.Service); tErr != nil {
+				// linger until GC. A dedicated context is used so cleanup is not
+				// aborted if provision failed due to jobCtx timeout.
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 1*time.Minute)
+				defer cleanupCancel()
+				if tErr := Teardown(cleanupCtx, w.logger, w.prov.Clientset, e.PRNumber, e.Service); tErr != nil {
 					w.logger.Error("partial cleanup failed", "pr", e.PRNumber, "error", tErr)
 				}
 			}
@@ -170,11 +183,20 @@ func (w *Worker) process(ctx context.Context, e Event) {
 	}
 }
 
-// done clears the in-flight guard for a PR once its event finishes.
+// done clears the in-flight guard for a PR once its event finishes, and re-enqueues
+// any coalesced re-synchronization event that arrived while the build was running.
 func (w *Worker) done(pr int) {
 	w.mu.Lock()
+	defer w.mu.Unlock()
 	delete(w.inflight, pr)
-	w.mu.Unlock()
+	if next, ok := w.needsResync[pr]; ok {
+		delete(w.needsResync, pr)
+		go func(e Event) {
+			if !w.Enqueue(e) {
+				w.logger.Warn("coalesced event re-enqueue failed; queue full", "pr", e.PRNumber)
+			}
+		}(next)
+	}
 }
 
 // withRetry runs fn up to three times with capped exponential backoff, stopping

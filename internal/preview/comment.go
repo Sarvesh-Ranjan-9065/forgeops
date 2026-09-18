@@ -28,7 +28,10 @@ func UpsertComment(ctx context.Context, client *github.Client, owner, repo strin
 			if c.Body != nil && strings.Contains(*c.Body, stickyMarker) {
 				_, _, err := client.Issues.EditComment(ctx, owner, repo, c.GetID(),
 					&github.IssueComment{Body: github.String(body)})
-				return err
+				if err != nil {
+					return fmt.Errorf("edit comment %d: %w", c.GetID(), err)
+				}
+				return nil
 			}
 		}
 		if resp.NextPage == 0 {
@@ -38,5 +41,41 @@ func UpsertComment(ctx context.Context, client *github.Client, owner, repo strin
 	}
 	_, _, err := client.Issues.CreateComment(ctx, owner, repo, prNumber,
 		&github.IssueComment{Body: github.String(body)})
-	return err
+	if err != nil {
+		return fmt.Errorf("create comment: %w", err)
+	}
+	return nil
+}
+
+// DecommissionComment updates any existing sticky PR comment to indicate that the
+// preview environment has been torn down following PR closure.
+func DecommissionComment(ctx context.Context, client *github.Client, owner, repo string, prNumber int) error {
+	if client == nil {
+		return nil
+	}
+	body := fmt.Sprintf("%s\nPreview environment torn down (PR closed).", stickyMarker)
+	opts := &github.IssueListCommentsOptions{
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
+	for {
+		comments, resp, err := client.Issues.ListComments(ctx, owner, repo, prNumber, opts)
+		if err != nil {
+			return fmt.Errorf("list comments for decommission: %w", err)
+		}
+		for _, c := range comments {
+			if c.Body != nil && strings.Contains(*c.Body, stickyMarker) {
+				_, _, err := client.Issues.EditComment(ctx, owner, repo, c.GetID(),
+					&github.IssueComment{Body: github.String(body)})
+				if err != nil {
+					return fmt.Errorf("edit decommission comment: %w", err)
+				}
+				return nil
+			}
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	return nil
 }
