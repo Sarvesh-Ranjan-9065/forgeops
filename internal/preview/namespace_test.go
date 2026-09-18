@@ -33,4 +33,14 @@ func TestEnsureNamespace(t *testing.T) {
 	require.Equal(t, "101", ns.Labels[LabelPR])
 	require.Equal(t, "api-service", ns.Labels[LabelService])
 	require.NotEmpty(t, ns.Labels[LabelCreatedAt])
+
+	// Long service name exceeding 63 characters
+	longSvc := "this-is-an-extremely-long-service-name-that-exceeds-the-maximum-allowed-length-for-k8s-namespaces"
+	longName, err := EnsureNamespace(ctx, clientset, 99999, longSvc)
+	require.NoError(t, err)
+	require.LessOrEqual(t, len(longName), 63)
+
+	longNs, err := clientset.CoreV1().Namespaces().Get(ctx, longName, metav1.GetOptions{})
+	require.NoError(t, err)
+	require.LessOrEqual(t, len(longNs.Labels[LabelService]), 63)
 }

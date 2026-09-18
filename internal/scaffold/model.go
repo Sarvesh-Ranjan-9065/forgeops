@@ -39,13 +39,15 @@ func (s *ServiceSpec) Default() {
 }
 
 // Validate reports whether the spec is usable. It enforces a DNS-safe lowercase
-// name, a supported language, and a valid port range.
+// name with a maximum length of 50 characters (ensuring generated preview namespace
+// names pr-<n>-<svc> do not exceed the Kubernetes 63-character limit), a supported
+// language, and a valid port range.
 func (s ServiceSpec) Validate() error {
 	if !dnsLabel.MatchString(s.Name) {
 		return fmt.Errorf("name %q must be a lowercase DNS label (a-z, 0-9, hyphen)", s.Name)
 	}
-	if len(s.Name) > 63 {
-		return fmt.Errorf("name %q must be 63 characters or fewer", s.Name)
+	if len(s.Name) > 50 {
+		return fmt.Errorf("name %q must be 50 characters or fewer", s.Name)
 	}
 	if s.Lang != "go" {
 		return fmt.Errorf("lang %q is not supported; only go is supported in v1", s.Lang)
