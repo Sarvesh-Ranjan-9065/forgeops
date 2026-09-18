@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -46,10 +47,16 @@ func main() {
 		Clientset: clientset,
 		GitHub:    gh.NewClient(ctx, cfg.GitHubToken),
 		Logger:    logger,
-		Registry:  "localhost:5000",
+		Registry:  cfg.Registry,
+		Token:     cfg.GitHubToken,
 	}
 	worker := preview.NewWorker(prov, 64)
-	go worker.Run(ctx)
+	var workerWg sync.WaitGroup
+	workerWg.Add(1)
+	go func() {
+		defer workerWg.Done()
+		worker.Run(ctx)
+	}()
 
 	collector := &gc.Collector{
 		Clientset: clientset,
@@ -80,6 +87,12 @@ func main() {
 			Logger:    logger,
 			TTL:       24 * time.Hour,
 		}).Routes(),
+		ReadinessCheck: func(c context.Context) error {
+			return clientset.Discovery().RESTClient().Get().AbsPath("/healthz").Do(c).Error()
+		},
+		AdminUser: os.Getenv("FORGE_ADMIN_USER"),
+		AdminPass: os.Getenv("FORGE_ADMIN_PASSWORD"),
+		Logger:    logger,
 	})
 
 	srv := server.New(":8080", router, logger)
@@ -87,4 +100,7 @@ func main() {
 		logger.Error("server error", "error", err)
 		os.Exit(1)
 	}
+	logger.Info("waiting for background workers to drain")
+	workerWg.Wait()
+	logger.Info("shutdown complete")
 }

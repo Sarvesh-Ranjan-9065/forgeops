@@ -14,6 +14,9 @@ type Config struct {
 	// GitHubOwner is the account or org that owns pushed repositories.
 	// Source: FORGE_GITHUB_OWNER.
 	GitHubOwner string
+	// Registry is the container registry host:port used for preview images.
+	// Source: FORGE_REGISTRY. Defaults to "localhost:5000".
+	Registry string
 }
 
 // FromEnv builds a Config from environment variables. Both FORGE_GITHUB_TOKEN
@@ -22,12 +25,16 @@ func FromEnv() (Config, error) {
 	c := Config{
 		GitHubToken: os.Getenv("FORGE_GITHUB_TOKEN"),
 		GitHubOwner: os.Getenv("FORGE_GITHUB_OWNER"),
+		Registry:    os.Getenv("FORGE_REGISTRY"),
 	}
 	if c.GitHubToken == "" {
 		return Config{}, errors.New("FORGE_GITHUB_TOKEN is required")
 	}
 	if c.GitHubOwner == "" {
 		return Config{}, errors.New("FORGE_GITHUB_OWNER is required")
+	}
+	if c.Registry == "" {
+		c.Registry = "localhost:5000"
 	}
 	return c, nil
 }

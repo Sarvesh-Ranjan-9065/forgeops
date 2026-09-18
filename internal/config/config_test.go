@@ -16,14 +16,26 @@ func TestFromEnv(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("valid environment variables", func(t *testing.T) {
+	t.Run("valid environment variables default registry", func(t *testing.T) {
 		t.Setenv("FORGE_GITHUB_TOKEN", "ghp_1234567890abcdef")
 		t.Setenv("FORGE_GITHUB_OWNER", "test-org")
+		_ = os.Unsetenv("FORGE_REGISTRY")
 
 		cfg, err := FromEnv()
 		require.NoError(t, err)
 		require.Equal(t, "ghp_1234567890abcdef", cfg.GitHubToken)
 		require.Equal(t, "test-org", cfg.GitHubOwner)
+		require.Equal(t, "localhost:5000", cfg.Registry)
+	})
+
+	t.Run("custom registry", func(t *testing.T) {
+		t.Setenv("FORGE_GITHUB_TOKEN", "ghp_1234567890abcdef")
+		t.Setenv("FORGE_GITHUB_OWNER", "test-org")
+		t.Setenv("FORGE_REGISTRY", "registry.internal:5000")
+
+		cfg, err := FromEnv()
+		require.NoError(t, err)
+		require.Equal(t, "registry.internal:5000", cfg.Registry)
 	})
 }
 
