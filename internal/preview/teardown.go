@@ -10,6 +10,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+// TeardownArgs constructs the argument list for helm uninstall. Flag parsing is
+// terminated with -- before user-controlled release name to prevent flag injection.
+func TeardownArgs(ns, svc string) []string {
+	return []string{"uninstall", "--namespace", ns, "--ignore-not-found", "--", svc}
+}
+
 // Teardown removes the preview environment for a PR: it uninstalls the Helm
 // release and deletes the namespace. Both steps tolerate "not found" so repeated
 // teardowns are safe.
@@ -18,7 +24,7 @@ func Teardown(ctx context.Context, logger *slog.Logger, cs kubernetes.Interface,
 
 	// helm uninstall is best-effort; deleting the namespace removes everything
 	// regardless, so a missing release is not fatal.
-	if err := run(ctx, logger, "helm", "uninstall", svc, "--namespace", ns, "--ignore-not-found"); err != nil {
+	if err := run(ctx, logger, "helm", TeardownArgs(ns, svc)...); err != nil {
 		logger.Warn("helm uninstall failed; continuing to namespace deletion", "ns", ns, "error", err)
 	}
 
