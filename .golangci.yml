@@ -10,10 +10,10 @@ linters:
     revive:
       rules:
         - name: exported
-          severity: warning
+          severity: error
           disabled: false
         - name: package-comments
-          severity: warning
+          severity: error
           disabled: false
   exclusions:
     generated: lax
