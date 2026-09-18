@@ -12,8 +12,10 @@ reg_name="kind-registry"
 reg_port="5000"
 
 # Start the registry container if it is not already running.
+# REGISTRY_STORAGE_DELETE_ENABLED enables manifest deletion via registry API and GC.
 if [ -z "$(docker ps -q --filter "name=^/${reg_name}$")" ]; then
   docker run -d --restart=always \
+    -e REGISTRY_STORAGE_DELETE_ENABLED=true \
     -p "127.0.0.1:${reg_port}:5000" \
     --name "${reg_name}" \
     registry:2
