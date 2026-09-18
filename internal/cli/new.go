@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/spf13/cobra"
@@ -33,14 +34,14 @@ var newCmd = &cobra.Command{
 		spec := scaffold.ServiceSpec{Name: newName, Lang: newLang}
 		spec.Default()
 		if err := spec.Validate(); err != nil {
-			return err
+			return fmt.Errorf("validate spec: %w", err)
 		}
 		renderer := scaffold.NewRenderer()
 		if newPush {
 			return pushToGitHub(cmd.Context(), logger, renderer, spec, newPrivate)
 		}
 		if err := renderer.Render(spec, newOutput); err != nil {
-			return err
+			return fmt.Errorf("render scaffold: %w", err)
 		}
 		logger.Info("scaffolded service", "name", spec.Name, "output", newOutput)
 		return nil
@@ -62,18 +63,18 @@ func init() {
 func pushToGitHub(ctx context.Context, logger *slog.Logger, r *scaffold.Renderer, spec scaffold.ServiceSpec, private bool) error {
 	cfg, err := config.FromEnv()
 	if err != nil {
-		return err
+		return fmt.Errorf("load config from env: %w", err)
 	}
 	files, err := r.RenderMap(spec)
 	if err != nil {
-		return err
+		return fmt.Errorf("render scaffold map: %w", err)
 	}
 	client := gh.NewClient(ctx, cfg.GitHubToken)
-	if err := gh.CreateRepo(ctx, client, spec.Name, private); err != nil {
-		return err
+	if err := gh.CreateRepo(ctx, client, cfg.GitHubOwner, spec.Name, private); err != nil {
+		return fmt.Errorf("create github repo %s/%s: %w", cfg.GitHubOwner, spec.Name, err)
 	}
 	if err := gh.PushTree(ctx, client, cfg.GitHubOwner, spec.Name, "chore: scaffold service via forge", files); err != nil {
-		return err
+		return fmt.Errorf("push tree to github %s/%s: %w", cfg.GitHubOwner, spec.Name, err)
 	}
 	logger.Info("pushed service to github",
 		"owner", cfg.GitHubOwner, "repo", spec.Name, "token", cfg.RedactedToken())

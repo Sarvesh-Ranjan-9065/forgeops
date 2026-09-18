@@ -29,7 +29,8 @@ func init() {
 
 // Execute runs the root command. It writes any error to standard error and exits
 // the process with a non-zero status, so callers in main do not need to handle
-// errors themselves.
+// errors themselves. Direct write to os.Stderr via fmt.Fprintln is an intentional
+// exception to the structured slog rule to preserve standard CLI command-line UX.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
