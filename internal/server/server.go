@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -23,6 +24,9 @@ func New(addr string, handler http.Handler, logger *slog.Logger) *Server {
 			Addr:              addr,
 			Handler:           handler,
 			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      60 * time.Second,
+			IdleTimeout:       120 * time.Second,
 		},
 		logger: logger,
 	}
@@ -41,11 +45,14 @@ func (s *Server) Run(ctx context.Context) error {
 
 	select {
 	case err := <-errCh:
-		return err
+		return fmt.Errorf("server listen: %w", err)
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		s.logger.Info("server shutting down")
-		return s.httpServer.Shutdown(shutdownCtx)
+		if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("server shutdown: %w", err)
+		}
+		return nil
 	}
 }

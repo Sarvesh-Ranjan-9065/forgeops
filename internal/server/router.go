@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -21,6 +23,15 @@ type RouterDeps struct {
 	// DashboardHandler serves the read-only dashboard UI and JSON API under
 	// /dashboard. If nil, the dashboard is not mounted.
 	DashboardHandler http.Handler
+	// ReadinessCheck verifies downstream dependency health (e.g. Kubernetes API).
+	// If nil or returns nil, /readyz reports 200 OK.
+	ReadinessCheck func(context.Context) error
+	// AdminUser and AdminPass optionally configure HTTP Basic Auth for
+	// internal endpoints (/metrics and /dashboard).
+	AdminUser string
+	AdminPass string
+	// Logger is used to log server events, such as readiness check errors.
+	Logger *slog.Logger
 }
 
 // NewRouter builds the Chi router exposing health, readiness, webhook, and
@@ -34,18 +45,32 @@ func NewRouter(deps RouterDeps) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
-	r.Get("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+	r.Get("/readyz", func(w http.ResponseWriter, req *http.Request) {
+		if deps.ReadinessCheck != nil {
+			if err := deps.ReadinessCheck(req.Context()); err != nil {
+				if deps.Logger != nil {
+					deps.Logger.Warn("readiness check failed", "error", err)
+				}
+				http.Error(w, "not ready", http.StatusServiceUnavailable)
+				return
+			}
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready"))
 	})
-	r.Handle("/metrics", promhttp.Handler())
 
-	if deps.DashboardHandler != nil {
-		r.Get("/dashboard", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, "/dashboard/", http.StatusMovedPermanently)
-		})
-		r.Mount("/dashboard", deps.DashboardHandler)
-	}
+	internalAuth := fwmw.ProtectInternal(deps.AdminUser, deps.AdminPass)
+	r.Group(func(ir chi.Router) {
+		ir.Use(internalAuth)
+		ir.Handle("/metrics", promhttp.Handler())
+
+		if deps.DashboardHandler != nil {
+			ir.Get("/dashboard", func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, "/dashboard/", http.StatusMovedPermanently)
+			})
+			ir.Mount("/dashboard", deps.DashboardHandler)
+		}
+	})
 
 	r.Group(func(pr chi.Router) {
 		pr.Use(fwmw.VerifySignature(deps.WebhookSecret))
